@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option go_package = "./proto";
+
+service AudioService {
+  rpc Connect (stream Broadcast) returns (stream Broadcast) {}
+}
+
+message Broadcast {
+  string name = 1;
+  Audio audio = 2;
+}
+
+message Audio {
+  int32 sampleRate = 1;
+  int32 length = 2;
+  repeated int32 samples = 3;
+}
