@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"proto"
-	"time"
 )
 
 const (
@@ -24,11 +23,9 @@ type client struct {
 
 	context context.Context
 
-	server grpc.BidiStreamingClient[proto.Broadcast, proto.Broadcast]
+	server grpc.BidiStreamingClient[proto.Audio, proto.Audio]
 
 	audioOutputCache [][]int32
-
-	lastInBroadcastTime time.Time
 
 	isReceivingBroadcast bool
 	hasMicOn             bool
@@ -70,11 +67,9 @@ func (c *client) handleGrpcStreamRec() {
 		if err != nil {
 			panic(err)
 		}
-		c.lastInBroadcastTime = time.Now()
 
-		respAudio := resp.GetAudio()
-		if respAudio != nil {
-			c.audioOutputCache = append(c.audioOutputCache, respAudio.Samples)
+		if resp != nil {
+			c.audioOutputCache = append(c.audioOutputCache, resp.Samples)
 			if !c.isPlayingAudio {
 				c.isPlayingAudio = true
 				go c.playAudio()
@@ -142,9 +137,9 @@ func (c *client) startAudioBroadcast() {
 		}
 
 		go func(sendSamples []int32) {
-			res := proto.Broadcast{Audio: &proto.Audio{Samples: sendSamples}}
+			res := &proto.Audio{Samples: sendSamples}
 
-			if sendError := c.server.Send(&res); sendError != nil {
+			if sendError := c.server.Send(res); sendError != nil {
 				log.Printf("%v", sendError)
 				return
 			}
@@ -155,17 +150,6 @@ func (c *client) startAudioBroadcast() {
 		panic(err)
 	}
 	c.hasMicOn = false
-}
-
-func (c *client) hasIncomingBroadcast() bool {
-	if !c.isReceivingBroadcast {
-		return false
-	}
-	if time.Now().After(c.lastInBroadcastTime.Add(300 * time.Millisecond)) {
-		c.isReceivingBroadcast = false
-		return false
-	}
-	return true
 }
 
 func main() {

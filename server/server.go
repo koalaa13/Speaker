@@ -11,20 +11,18 @@ import (
 type server struct {
 	proto.UnimplementedAudioServiceServer
 	audioMutex                 sync.Mutex
-	currentBroadcastAudioCache []proto.Audio
+	currentBroadcastAudioCache [][]int32
 }
 
-func (s *server) isCurrentlyBroadcasting() bool {
-
+func (s *server) hasToBroadcast() bool {
 	return len(s.currentBroadcastAudioCache) > 0
 }
 
-func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Broadcast, proto.Broadcast]) error {
+func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audio]) error {
 	log.Println("new stream connection established")
 	ctx := stream.Context()
 
 	go func() {
-
 		for {
 			select {
 			case <-ctx.Done():
@@ -33,19 +31,14 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Broadcast, proto.
 			default:
 			}
 
-			if !s.isCurrentlyBroadcasting() {
-				continue
-			}
-
 			s.audioMutex.Lock()
-			if s.isCurrentlyBroadcasting() {
-				log.Println("broadcasting audio")
-				data := proto.Broadcast{
-					Audio: &s.currentBroadcastAudioCache[0],
-				}
+			log.Println("broadcasting audio")
+			if s.hasToBroadcast() {
+				data := s.currentBroadcastAudioCache[0]
+				audio := proto.Audio{Samples: data}
 				s.currentBroadcastAudioCache = s.currentBroadcastAudioCache[1:]
 
-				if err := stream.Send(&data); err != nil {
+				if err := stream.Send(&audio); err != nil {
 					log.Println("failed to send audio: " + err.Error())
 				}
 			}
@@ -63,21 +56,16 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Broadcast, proto.
 			default:
 			}
 
-			broadcast, err := stream.Recv()
+			audio, err := stream.Recv()
 			if err != nil {
 				log.Println("stream connection closed: " + ctx.Err().Error())
 				break
 			}
 
-			audio := broadcast.GetAudio()
 			if audio != nil {
 				s.audioMutex.Lock()
-				log.Println("new audio from broadcast: " + broadcast.GetName())
-				// TODO copy grpc message here is incorrect????
-				s.currentBroadcastAudioCache = append(s.currentBroadcastAudioCache, *audio)
+				s.currentBroadcastAudioCache = append(s.currentBroadcastAudioCache, audio.GetSamples())
 				s.audioMutex.Unlock()
-				log.Println("added new audio to a cache: " + broadcast.GetName())
-
 			}
 		}
 	}()
