@@ -115,7 +115,7 @@ func openAudioStream(forOutput bool, buffer *[]float32) *portaudio.Stream {
 		p.Input.Channels = 0
 		p.Output.Channels = 1
 	} else {
-		p = portaudio.HighLatencyParameters(h.DefaultInputDevice, nil)
+		p = portaudio.LowLatencyParameters(h.DefaultInputDevice, nil)
 		p.Input.Channels = 1
 		p.Output.Channels = 0
 	}
