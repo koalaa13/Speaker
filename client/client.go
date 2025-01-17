@@ -5,6 +5,7 @@ import (
 	"github.com/gordonklaus/portaudio"
 	"gocv.io/x/gocv"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"log"
 	"proto"
@@ -46,7 +47,7 @@ func (c *client) shutdown() {
 }
 
 func (c *client) connectToServer() {
-	conn, err := grpc.Dial("localhost:6000", grpc.WithInsecure())
+	conn, err := grpc.NewClient(":6006", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(err)
 	}
@@ -136,14 +137,12 @@ func (c *client) startAudioBroadcast() {
 			panic(err)
 		}
 
-		go func(sendSamples []int32) {
-			res := &proto.Audio{Samples: sendSamples}
+		res := &proto.Audio{Samples: in}
 
-			if sendError := c.server.Send(res); sendError != nil {
-				log.Printf("%v", sendError)
-				return
-			}
-		}(in)
+		if sendError := c.server.Send(res); sendError != nil {
+			log.Printf("%v", sendError)
+			return
+		}
 	}
 	err = audioInStream.Stop()
 	if err != nil {

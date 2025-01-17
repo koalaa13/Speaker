@@ -32,7 +32,6 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 			}
 
 			s.audioMutex.Lock()
-			log.Println("broadcasting audio")
 			if s.hasToBroadcast() {
 				data := s.currentBroadcastAudioCache[0]
 				audio := proto.Audio{Samples: data}
@@ -43,7 +42,6 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 				}
 			}
 			s.audioMutex.Unlock()
-			log.Println("finish broadcasting audio")
 		}
 	}()
 
@@ -61,6 +59,7 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 				log.Println("stream connection closed: " + ctx.Err().Error())
 				break
 			}
+			//log.Println(audio.GetSamples())
 
 			if audio != nil {
 				s.audioMutex.Lock()
@@ -81,7 +80,7 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 }
 
 func main() {
-	l, err := net.Listen("tcp", ":6000")
+	l, err := net.Listen("tcp", ":6006")
 	if err != nil {
 		panic(err)
 	}
