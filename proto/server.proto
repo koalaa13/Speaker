@@ -7,5 +7,5 @@ service AudioService {
 }
 
 message Audio {
-  repeated int32 samples = 1;
+  repeated float samples = 1;
 }

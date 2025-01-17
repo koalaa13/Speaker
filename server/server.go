@@ -11,7 +11,7 @@ import (
 type server struct {
 	proto.UnimplementedAudioServiceServer
 	audioMutex                 sync.Mutex
-	currentBroadcastAudioCache [][]int32
+	currentBroadcastAudioCache [][]float32
 }
 
 func (s *server) hasToBroadcast() bool {
@@ -59,7 +59,7 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 				log.Println("stream connection closed: " + ctx.Err().Error())
 				break
 			}
-			//log.Println(audio.GetSamples())
+			log.Println(audio.GetSamples())
 
 			if audio != nil {
 				s.audioMutex.Lock()

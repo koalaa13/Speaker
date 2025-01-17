@@ -26,7 +26,7 @@ type client struct {
 
 	server grpc.BidiStreamingClient[proto.Audio, proto.Audio]
 
-	audioOutputCache [][]int32
+	audioOutputCache [][]float32
 
 	isReceivingBroadcast bool
 	hasMicOn             bool
@@ -80,13 +80,9 @@ func (c *client) handleGrpcStreamRec() {
 }
 
 func (c *client) playAudio() {
-	out := make([]int32, sampleRate*sampleSeconds)
-	var err error
+	out := make([]float32, sampleRate*sampleSeconds)
 
-	c.audioOutputStream, err = portaudio.OpenDefaultStream(0, 1, sampleRate, len(out), &out)
-	if err != nil {
-		panic(err)
-	}
+	c.audioOutputStream = openAudioStream(true, &out)
 	defer c.audioOutputStream.Close()
 
 	c.audioOutputStream.Start()
@@ -101,8 +97,9 @@ func (c *client) playAudio() {
 
 		c.isPlayingAudio = true
 		out = c.audioOutputCache[0]
+		log.Println(out)
 		c.audioOutputCache = c.audioOutputCache[1:]
-		err = c.audioOutputStream.Write()
+		err := c.audioOutputStream.Write()
 
 		if err != nil {
 			panic(err)
@@ -110,14 +107,27 @@ func (c *client) playAudio() {
 	}
 }
 
+func openAudioStream(forOutput bool, buffer *[]float32) *portaudio.Stream {
+	h, _ := portaudio.DefaultHostApi()
+	var p portaudio.StreamParameters
+	if forOutput {
+		p = portaudio.LowLatencyParameters(nil, h.DefaultOutputDevice)
+		p.Input.Channels = 0
+		p.Output.Channels = 1
+	} else {
+		p = portaudio.HighLatencyParameters(h.DefaultInputDevice, nil)
+		p.Input.Channels = 1
+		p.Output.Channels = 0
+	}
+	res, _ := portaudio.OpenStream(p, buffer)
+	return res
+}
+
 func (c *client) startAudioBroadcast() {
 	c.hasMicOn = true
-	in := make([]int32, sampleRate*sampleSeconds)
-	audioInStream, err := portaudio.OpenDefaultStream(1, 0, sampleRate, len(in), &in)
-	if err != nil {
-		panic(err)
-	}
-	err = audioInStream.Start()
+	in := make([]float32, sampleRate*sampleSeconds)
+	audioInStream := openAudioStream(false, &in)
+	err := audioInStream.Start()
 	if err != nil {
 		panic(err)
 	}
@@ -138,6 +148,7 @@ func (c *client) startAudioBroadcast() {
 		}
 
 		res := &proto.Audio{Samples: in}
+		log.Println(in)
 
 		if sendError := c.server.Send(res); sendError != nil {
 			log.Printf("%v", sendError)
