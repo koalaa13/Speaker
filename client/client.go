@@ -17,16 +17,13 @@ const (
 )
 
 type client struct {
-	window            *gocv.Window
-	audioInputStream  *portaudio.Stream
-	audioOutputStream *portaudio.Stream
-	deviceId          string
+	window *gocv.Window
 
 	context context.Context
 
 	server grpc.BidiStreamingClient[proto.Audio, proto.Audio]
 
-	audioOutputCache [][]float32
+	audioOutputCache [][]int32
 
 	isReceivingBroadcast bool
 	hasMicOn             bool
@@ -71,8 +68,9 @@ func (c *client) handleGrpcStreamRec() {
 
 		if resp != nil {
 			c.audioOutputCache = append(c.audioOutputCache, resp.Samples)
-			if !c.isPlayingAudio {
+			if !c.isPlayingAudio && len(c.audioOutputCache) > 2 {
 				c.isPlayingAudio = true
+				log.Println("invoke playAudio")
 				go c.playAudio()
 			}
 		}
@@ -80,26 +78,41 @@ func (c *client) handleGrpcStreamRec() {
 }
 
 func (c *client) playAudio() {
-	out := make([]float32, sampleRate*sampleSeconds)
+	out := make([]int32, sampleRate*sampleSeconds)
 
-	c.audioOutputStream = openAudioStream(true, &out)
-	defer c.audioOutputStream.Close()
+	audioOutputStream := openAudioStream(true, &out)
+	err := audioOutputStream.Start()
+	if err != nil {
+		panic(err)
+	}
 
-	c.audioOutputStream.Start()
-	defer c.audioOutputStream.Stop()
+	defer func(audioOutputStream *portaudio.Stream) {
+		err = audioOutputStream.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(audioOutputStream)
+
+	defer func(audioOutputStream *portaudio.Stream) {
+		err = audioOutputStream.Stop()
+		if err != nil {
+			panic(err)
+		}
+	}(audioOutputStream)
 
 	for {
 		cacheLength := len(c.audioOutputCache)
+		log.Printf("cacheLength is %d", cacheLength)
 		if cacheLength == 0 {
+			log.Println("isPlayingAudio set to false")
 			c.isPlayingAudio = false
 			break
 		}
 
 		c.isPlayingAudio = true
 		out = c.audioOutputCache[0]
-		log.Println(out)
 		c.audioOutputCache = c.audioOutputCache[1:]
-		err := c.audioOutputStream.Write()
+		err = audioOutputStream.Write()
 
 		if err != nil {
 			panic(err)
@@ -107,7 +120,8 @@ func (c *client) playAudio() {
 	}
 }
 
-func openAudioStream(forOutput bool, buffer *[]float32) *portaudio.Stream {
+func openAudioStream(forOutput bool, buffer *[]int32) *portaudio.Stream {
+	log.Printf("Opening audio stream forOutput: %s", forOutput)
 	h, _ := portaudio.DefaultHostApi()
 	var p portaudio.StreamParameters
 	if forOutput {
@@ -119,18 +133,36 @@ func openAudioStream(forOutput bool, buffer *[]float32) *portaudio.Stream {
 		p.Input.Channels = 1
 		p.Output.Channels = 0
 	}
-	res, _ := portaudio.OpenStream(p, buffer)
+	res, err := portaudio.OpenStream(p, buffer)
+	if err != nil {
+		panic(err)
+	}
 	return res
 }
 
 func (c *client) startAudioBroadcast() {
 	c.hasMicOn = true
-	in := make([]float32, sampleRate*sampleSeconds)
+	in := make([]int32, sampleRate*sampleSeconds)
 	audioInStream := openAudioStream(false, &in)
 	err := audioInStream.Start()
 	if err != nil {
 		panic(err)
 	}
+
+	defer func(audioInStream *portaudio.Stream) {
+		err = audioInStream.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(audioInStream)
+
+	defer func(audioInStream *portaudio.Stream) {
+		err = audioInStream.Stop()
+		if err != nil {
+			panic(err)
+		}
+	}(audioInStream)
+
 	for {
 		select {
 		case <-c.context.Done():
@@ -148,16 +180,10 @@ func (c *client) startAudioBroadcast() {
 		}
 
 		res := &proto.Audio{Samples: in}
-		log.Println(in)
-
 		if sendError := c.server.Send(res); sendError != nil {
 			log.Printf("%v", sendError)
 			return
 		}
-	}
-	err = audioInStream.Stop()
-	if err != nil {
-		panic(err)
 	}
 	c.hasMicOn = false
 }

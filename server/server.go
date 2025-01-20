@@ -11,7 +11,7 @@ import (
 type server struct {
 	proto.UnimplementedAudioServiceServer
 	audioMutex                 sync.Mutex
-	currentBroadcastAudioCache [][]float32
+	currentBroadcastAudioCache [][]int32
 }
 
 func (s *server) hasToBroadcast() bool {
@@ -59,7 +59,6 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 				log.Println("stream connection closed: " + ctx.Err().Error())
 				break
 			}
-			log.Println(audio.GetSamples())
 
 			if audio != nil {
 				s.audioMutex.Lock()
@@ -87,7 +86,7 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 	proto.RegisterAudioServiceServer(grpcServer, &server{})
-	if err := grpcServer.Serve(l); err != nil {
+	if err = grpcServer.Serve(l); err != nil {
 		panic(err)
 	}
 }
