@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/gordonklaus/portaudio v0.0.0-20230709114228-aafa478834f5
-	gocv.io/x/gocv v0.40.0
+	github.com/gotk3/gotk3 v0.6.1
 	google.golang.org/grpc v1.69.4
 	proto v0.0.0
 )

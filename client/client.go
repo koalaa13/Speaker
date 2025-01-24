@@ -1,9 +1,9 @@
 package main
 
 import (
+	"client/ui"
 	"context"
 	"github.com/gordonklaus/portaudio"
-	"gocv.io/x/gocv"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"io"
@@ -17,8 +17,6 @@ const (
 )
 
 type client struct {
-	window *gocv.Window
-
 	context context.Context
 
 	server grpc.BidiStreamingClient[proto.Audio, proto.Audio]
@@ -32,18 +30,22 @@ type client struct {
 	wantToQuit           bool
 }
 
-func createClient(ctx context.Context) client {
-	return client{
+func createClient(ctx context.Context) *client {
+	c := &client{
 		context: ctx,
-		window:  gocv.NewWindow("capture window"),
 	}
+	go ui.CreateWindow(func() {
+		log.Println("trying to change microphone status")
+		c.wantToBroadcast = !c.wantToBroadcast
+	})
+	return c
 }
 
 func (c *client) shutdown() {
-	c.window.Close()
 }
 
 func (c *client) connectToServer() {
+	log.Println("Connecting to server...")
 	conn, err := grpc.NewClient(":6006", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(err)
@@ -122,7 +124,10 @@ func (c *client) playAudio() {
 
 func openAudioStream(forOutput bool, buffer *[]int32) *portaudio.Stream {
 	log.Printf("Opening audio stream forOutput: %s", forOutput)
-	h, _ := portaudio.DefaultHostApi()
+	h, err := portaudio.DefaultHostApi()
+	if err != nil {
+		panic(err)
+	}
 	var p portaudio.StreamParameters
 	if forOutput {
 		p = portaudio.LowLatencyParameters(nil, h.DefaultOutputDevice)
@@ -207,14 +212,6 @@ func main() {
 		default:
 		}
 
-		switch c.window.WaitKey(1) {
-		case 27: // ESC
-			c.wantToQuit = true
-		case 32: // SPACE
-			c.wantToBroadcast = !c.wantToBroadcast
-		default:
-		}
-
 		if c.wantToQuit {
 			c.shutdown()
 			break
@@ -222,6 +219,7 @@ func main() {
 
 		if c.wantToBroadcast {
 			if !c.hasMicOn {
+				c.hasMicOn = true
 				go c.startAudioBroadcast()
 			}
 		} else {

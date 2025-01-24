@@ -61,6 +61,7 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 			}
 
 			if audio != nil {
+				log.Println("received audio: " + audio.String())
 				s.audioMutex.Lock()
 				s.currentBroadcastAudioCache = append(s.currentBroadcastAudioCache, audio.GetSamples())
 				s.audioMutex.Unlock()
