@@ -5,22 +5,21 @@ import (
 	"log"
 	"net"
 	"proto"
-	"sync"
+	"types"
 )
 
 type server struct {
 	proto.UnimplementedAudioServiceServer
-	audioMutex                 sync.Mutex
-	currentBroadcastAudioCache [][]int32
+	broadcastAudioCaches map[string]*types.AudioCache
+	registeredClients    map[string]grpc.BidiStreamingServer[proto.AudioInfo, proto.AudioInfo]
 }
 
-func (s *server) hasToBroadcast() bool {
-	return len(s.currentBroadcastAudioCache) > 0
-}
-
-func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audio]) error {
+func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AudioInfo, proto.AudioInfo]) error {
 	log.Println("new stream connection established")
 	ctx := stream.Context()
+	clientId := ctx.Value("clientId").(string)
+	s.registeredClients[clientId] = stream
+	s.broadcastAudioCaches[clientId] = &types.AudioCache{}
 
 	go func() {
 		for {
@@ -31,17 +30,18 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 			default:
 			}
 
-			s.audioMutex.Lock()
-			if s.hasToBroadcast() {
-				data := s.currentBroadcastAudioCache[0]
-				audio := proto.Audio{Samples: data}
-				s.currentBroadcastAudioCache = s.currentBroadcastAudioCache[1:]
-
-				if err := stream.Send(&audio); err != nil {
-					log.Println("failed to send audio: " + err.Error())
+			toSend := s.broadcastAudioCaches[clientId].Read()
+			for cId, clientStream := range s.registeredClients {
+				if cId != clientId {
+					audioInfo := proto.AudioInfo{
+						ClientId: clientId,
+						Samples:  toSend,
+					}
+					if err := clientStream.Send(&audioInfo); err != nil {
+						log.Println("failed to send audio info: " + err.Error())
+					}
 				}
 			}
-			s.audioMutex.Unlock()
 		}
 	}()
 
@@ -62,9 +62,7 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.Audio, proto.Audi
 
 			if audio != nil {
 				log.Println("received audio: " + audio.String())
-				s.audioMutex.Lock()
-				s.currentBroadcastAudioCache = append(s.currentBroadcastAudioCache, audio.GetSamples())
-				s.audioMutex.Unlock()
+				s.broadcastAudioCaches[clientId].Write(audio.GetSamples())
 			}
 		}
 	}()

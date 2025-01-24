@@ -26,7 +26,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AudioServiceClient interface {
-	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Audio, Audio], error)
+	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AudioInfo, AudioInfo], error)
 }
 
 type audioServiceClient struct {
@@ -37,24 +37,24 @@ func NewAudioServiceClient(cc grpc.ClientConnInterface) AudioServiceClient {
 	return &audioServiceClient{cc}
 }
 
-func (c *audioServiceClient) Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Audio, Audio], error) {
+func (c *audioServiceClient) Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AudioInfo, AudioInfo], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &AudioService_ServiceDesc.Streams[0], AudioService_Connect_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[Audio, Audio]{ClientStream: stream}
+	x := &grpc.GenericClientStream[AudioInfo, AudioInfo]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AudioService_ConnectClient = grpc.BidiStreamingClient[Audio, Audio]
+type AudioService_ConnectClient = grpc.BidiStreamingClient[AudioInfo, AudioInfo]
 
 // AudioServiceServer is the server API for AudioService service.
 // All implementations must embed UnimplementedAudioServiceServer
 // for forward compatibility.
 type AudioServiceServer interface {
-	Connect(grpc.BidiStreamingServer[Audio, Audio]) error
+	Connect(grpc.BidiStreamingServer[AudioInfo, AudioInfo]) error
 	mustEmbedUnimplementedAudioServiceServer()
 }
 
@@ -65,7 +65,7 @@ type AudioServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAudioServiceServer struct{}
 
-func (UnimplementedAudioServiceServer) Connect(grpc.BidiStreamingServer[Audio, Audio]) error {
+func (UnimplementedAudioServiceServer) Connect(grpc.BidiStreamingServer[AudioInfo, AudioInfo]) error {
 	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
 }
 func (UnimplementedAudioServiceServer) mustEmbedUnimplementedAudioServiceServer() {}
@@ -90,11 +90,11 @@ func RegisterAudioServiceServer(s grpc.ServiceRegistrar, srv AudioServiceServer)
 }
 
 func _AudioService_Connect_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(AudioServiceServer).Connect(&grpc.GenericServerStream[Audio, Audio]{ServerStream: stream})
+	return srv.(AudioServiceServer).Connect(&grpc.GenericServerStream[AudioInfo, AudioInfo]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AudioService_ConnectServer = grpc.BidiStreamingServer[Audio, Audio]
+type AudioService_ConnectServer = grpc.BidiStreamingServer[AudioInfo, AudioInfo]
 
 // AudioService_ServiceDesc is the grpc.ServiceDesc for AudioService service.
 // It's only intended for direct use with grpc.RegisterService,

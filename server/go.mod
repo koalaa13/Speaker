@@ -14,4 +14,8 @@ require (
 
 require proto v0.0.0
 
+require types v0.0.0
+
 replace proto => ../proto
+
+replace types => ../types

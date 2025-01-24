@@ -3,9 +3,10 @@ syntax = "proto3";
 option go_package = "./proto";
 
 service AudioService {
-  rpc Connect (stream Audio) returns (stream Audio) {}
+  rpc Connect (stream AudioInfo) returns (stream AudioInfo) {}
 }
 
-message Audio {
-  repeated int32 samples = 1;
+message AudioInfo {
+  string clientId = 1;
+  repeated int32 samples = 2;
 }

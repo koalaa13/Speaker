@@ -3,12 +3,14 @@ package main
 import (
 	"client/ui"
 	"context"
+	"github.com/google/uuid"
 	"github.com/gordonklaus/portaudio"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"log"
 	"proto"
+	"types"
 )
 
 const (
@@ -16,22 +18,77 @@ const (
 	sampleSeconds = .1
 )
 
+type audioPlayer struct {
+	isPlaying bool
+	cache     types.AudioCache
+}
+
+func (player *audioPlayer) addSample(part types.AudioPart) {
+	player.cache.Write(part)
+}
+
+func (player *audioPlayer) playAudio() {
+	out := make([]int32, sampleRate*sampleSeconds)
+
+	audioOutputStream := openAudioStream(true, &out)
+	err := audioOutputStream.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	defer func(audioOutputStream *portaudio.Stream) {
+		err = audioOutputStream.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(audioOutputStream)
+
+	defer func(audioOutputStream *portaudio.Stream) {
+		err = audioOutputStream.Stop()
+		if err != nil {
+			panic(err)
+		}
+	}(audioOutputStream)
+
+	for {
+		cacheLength := player.cache.Len()
+		log.Printf("cacheLength is %d", cacheLength)
+		if cacheLength == 0 {
+			log.Println("isPlayingAudio set to false")
+			player.isPlaying = false
+			break
+		}
+
+		player.isPlaying = true
+		out = player.cache.Read()
+		err = audioOutputStream.Write()
+
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
 type client struct {
+	id      string
 	context context.Context
 
-	server grpc.BidiStreamingClient[proto.Audio, proto.Audio]
+	server grpc.BidiStreamingClient[proto.AudioInfo, proto.AudioInfo]
 
-	audioOutputCache [][]int32
+	players map[string]*audioPlayer
 
 	isReceivingBroadcast bool
 	hasMicOn             bool
-	isPlayingAudio       bool
 	wantToBroadcast      bool
 	wantToQuit           bool
 }
 
-func createClient(ctx context.Context) *client {
+func createClient() *client {
+	clientUUID, _ := uuid.NewUUID()
+	clientId := clientUUID.String()
+	ctx := context.WithValue(context.Background(), "clientId", clientId)
 	c := &client{
+		id:      clientId,
 		context: ctx,
 	}
 	go ui.CreateWindow(func() {
@@ -60,7 +117,7 @@ func (c *client) connectToServer() {
 
 func (c *client) handleGrpcStreamRec() {
 	for {
-		resp, err := c.server.Recv()
+		audioInfo, err := c.server.Recv()
 		if err == io.EOF {
 			continue
 		}
@@ -68,56 +125,18 @@ func (c *client) handleGrpcStreamRec() {
 			panic(err)
 		}
 
-		if resp != nil {
-			c.audioOutputCache = append(c.audioOutputCache, resp.Samples)
-			if !c.isPlayingAudio && len(c.audioOutputCache) > 2 {
-				c.isPlayingAudio = true
-				log.Println("invoke playAudio")
-				go c.playAudio()
+		if audioInfo != nil {
+			fromClientId := audioInfo.ClientId
+			player, hasPlayer := c.players[fromClientId]
+			if !hasPlayer {
+				c.players[fromClientId] = &audioPlayer{}
+				player = c.players[fromClientId]
 			}
-		}
-	}
-}
-
-func (c *client) playAudio() {
-	out := make([]int32, sampleRate*sampleSeconds)
-
-	audioOutputStream := openAudioStream(true, &out)
-	err := audioOutputStream.Start()
-	if err != nil {
-		panic(err)
-	}
-
-	defer func(audioOutputStream *portaudio.Stream) {
-		err = audioOutputStream.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(audioOutputStream)
-
-	defer func(audioOutputStream *portaudio.Stream) {
-		err = audioOutputStream.Stop()
-		if err != nil {
-			panic(err)
-		}
-	}(audioOutputStream)
-
-	for {
-		cacheLength := len(c.audioOutputCache)
-		log.Printf("cacheLength is %d", cacheLength)
-		if cacheLength == 0 {
-			log.Println("isPlayingAudio set to false")
-			c.isPlayingAudio = false
-			break
-		}
-
-		c.isPlayingAudio = true
-		out = c.audioOutputCache[0]
-		c.audioOutputCache = c.audioOutputCache[1:]
-		err = audioOutputStream.Write()
-
-		if err != nil {
-			panic(err)
+			player.addSample(audioInfo.Samples)
+			if !player.isPlaying && player.cache.Len() > 2 {
+				player.isPlaying = true
+				go player.playAudio()
+			}
 		}
 	}
 }
@@ -184,7 +203,10 @@ func (c *client) startAudioBroadcast() {
 			panic(err)
 		}
 
-		res := &proto.Audio{Samples: in}
+		res := &proto.AudioInfo{
+			ClientId: c.id,
+			Samples:  in,
+		}
 		if sendError := c.server.Send(res); sendError != nil {
 			log.Printf("%v", sendError)
 			return
@@ -194,7 +216,7 @@ func (c *client) startAudioBroadcast() {
 }
 
 func main() {
-	c := createClient(context.Background())
+	c := createClient()
 
 	c.connectToServer()
 	err := portaudio.Initialize()
