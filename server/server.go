@@ -71,6 +71,8 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AudioInfo, proto.
 		select {
 		case <-ctx.Done():
 			log.Println("stream closed: " + ctx.Err().Error())
+			delete(s.broadcastAudioCaches, clientId)
+			delete(s.registeredClients, clientId)
 			return nil
 		default:
 		}
