@@ -7,6 +7,7 @@ import (
 	"github.com/gordonklaus/portaudio"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"io"
 	"log"
 	"proto"
@@ -51,16 +52,15 @@ func (player *audioPlayer) playAudio() {
 	}(audioOutputStream)
 
 	for {
-		cacheLength := player.cache.Len()
-		log.Printf("cacheLength is %d", cacheLength)
-		if cacheLength == 0 {
+		var hasData bool
+		out, hasData = player.cache.Read()
+		if !hasData {
 			log.Println("isPlayingAudio set to false")
 			player.isPlaying = false
 			break
 		}
 
 		player.isPlaying = true
-		out = player.cache.Read()
 		err = audioOutputStream.Write()
 
 		if err != nil {
@@ -86,10 +86,11 @@ type client struct {
 func createClient() *client {
 	clientUUID, _ := uuid.NewUUID()
 	clientId := clientUUID.String()
-	ctx := context.WithValue(context.Background(), "clientId", clientId)
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(types.ClientIdKey, clientId))
 	c := &client{
 		id:      clientId,
 		context: ctx,
+		players: make(map[string]*audioPlayer),
 	}
 	go ui.CreateWindow(func() {
 		log.Println("trying to change microphone status")

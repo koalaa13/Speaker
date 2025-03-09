@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"log"
 	"net"
 	"proto"
@@ -17,9 +19,21 @@ type server struct {
 func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AudioInfo, proto.AudioInfo]) error {
 	log.Println("new stream connection established")
 	ctx := stream.Context()
-	clientId := ctx.Value("clientId").(string)
+	md, _ := metadata.FromIncomingContext(ctx)
+	clientIds, has := md[types.ClientIdKey]
+	if !has {
+		log.Println("there is no client id")
+		return errors.New("there is no client id")
+	}
+	clientId := clientIds[0]
+	if s.registeredClients[clientId] == nil {
+		s.registeredClients = make(map[string]grpc.BidiStreamingServer[proto.AudioInfo, proto.AudioInfo])
+	}
 	s.registeredClients[clientId] = stream
-	s.broadcastAudioCaches[clientId] = &types.AudioCache{}
+	if s.broadcastAudioCaches == nil {
+		s.broadcastAudioCaches = make(map[string]*types.AudioCache)
+	}
+	s.broadcastAudioCaches[clientId] = types.NewAudioCache()
 
 	go func() {
 		for {
@@ -30,7 +44,10 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AudioInfo, proto.
 			default:
 			}
 
-			toSend := s.broadcastAudioCaches[clientId].Read()
+			toSend, hasData := s.broadcastAudioCaches[clientId].Read()
+			if !hasData {
+				continue
+			}
 			for cId, clientStream := range s.registeredClients {
 				if cId != clientId {
 					audioInfo := proto.AudioInfo{
